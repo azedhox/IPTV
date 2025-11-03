@@ -88,19 +88,77 @@ class M3UBot:
             return None
     
     def solve_captcha(self):
-        """محاولة حل الكابتشا البسيطة"""
+        """حل الكابتشا الحسابية البسيطة"""
         try:
-            # انتظار ظهور صورة الكابتشا
-            time.sleep(2)
+            time.sleep(1)
             
-            # محاولة إيجاد صورة الكابتشا
-            captcha_img = self.driver.find_element(By.ID, "CaptchaImage")
-            if captcha_img:
-                logger.info("⚠️ تم اكتشاف كابتشا - يجب حلها يدوياً أو استخدام قيمة افتراضية")
-                # يمكن هنا إضافة خدمة حل كابتشا مثل 2captcha
-                return None
-        except:
-            logger.info("ℹ️ لا يوجد كابتشا")
+            # البحث عن نص الكابتشا (مثل "9 + 6")
+            try:
+                # محاولة إيجاد العنصر الذي يحتوي على العملية الحسابية
+                captcha_elements = self.driver.find_elements(By.XPATH, 
+                    "//*[contains(text(), '+') or contains(text(), '-') or contains(text(), '×') or contains(text(), '÷')]")
+                
+                for element in captcha_elements:
+                    captcha_text = element.text.strip()
+                    if captcha_text:
+                        logger.info(f"🔢 تم العثور على كابتشا: {captcha_text}")
+                        
+                        # استخراج الأرقام والعملية
+                        import re
+                        # البحث عن نمط مثل "9 + 6" أو "9+6"
+                        match = re.search(r'(\d+)\s*([+\-×÷*\/])\s*(\d+)', captcha_text)
+                        
+                        if match:
+                            num1 = int(match.group(1))
+                            operation = match.group(2)
+                            num2 = int(match.group(3))
+                            
+                            # حساب النتيجة
+                            if operation == '+':
+                                result = num1 + num2
+                            elif operation == '-':
+                                result = num1 - num2
+                            elif operation in ['×', '*']:
+                                result = num1 * num2
+                            elif operation in ['÷', '/']:
+                                result = num1 // num2
+                            else:
+                                result = None
+                            
+                            if result is not None:
+                                logger.info(f"✅ تم حل الكابتشا: {num1} {operation} {num2} = {result}")
+                                return result
+                
+                # إذا لم نجد الكابتشا بالطريقة العادية، نحاول البحث في الصفحة
+                page_source = self.driver.page_source
+                math_pattern = re.search(r'>(\d+)\s*([+\-×÷*\/])\s*(\d+)<', page_source)
+                if math_pattern:
+                    num1 = int(math_pattern.group(1))
+                    operation = math_pattern.group(2)
+                    num2 = int(math_pattern.group(3))
+                    
+                    if operation == '+':
+                        result = num1 + num2
+                    elif operation == '-':
+                        result = num1 - num2
+                    elif operation in ['×', '*']:
+                        result = num1 * num2
+                    elif operation in ['÷', '/']:
+                        result = num1 // num2
+                    else:
+                        return None
+                    
+                    logger.info(f"✅ تم حل الكابتشا من الصفحة: {num1} {operation} {num2} = {result}")
+                    return result
+                    
+            except Exception as e:
+                logger.warning(f"⚠️ خطأ في قراءة الكابتشا: {e}")
+            
+            logger.info("ℹ️ لم يتم العثور على كابتشا")
+            return None
+            
+        except Exception as e:
+            logger.error(f"❌ خطأ في حل الكابتشا: {e}")
             return None
     
     def login(self):
@@ -125,14 +183,60 @@ class M3UBot:
             password_field.send_keys(SITE_PASSWORD)
             
             # محاولة حل الكابتشا
+            time.sleep(2)  # انتظار تحميل الكابتشا
             captcha_result = self.solve_captcha()
-            if captcha_result:
+            
+            if captcha_result is not None:
                 try:
-                    captcha_input = self.driver.find_element(By.ID, "Captcha")
-                    captcha_input.clear()
-                    captcha_input.send_keys(str(captcha_result))
+                    # البحث عن حقل إدخال الكابتشا
+                    captcha_input = None
+                    
+                    # محاولة 1: بواسطة ID
+                    try:
+                        captcha_input = self.driver.find_element(By.ID, "Captcha")
+                    except:
+                        pass
+                    
+                    # محاولة 2: بواسطة Name
+                    if not captcha_input:
+                        try:
+                            captcha_input = self.driver.find_element(By.NAME, "Captcha")
+                        except:
+                            pass
+                    
+                    # محاولة 3: بواسطة CSS Selector
+                    if not captcha_input:
+                        try:
+                            captcha_input = self.driver.find_element(By.CSS_SELECTOR, "input[placeholder*='captcha' i]")
+                        except:
+                            pass
+                    
+                    # محاولة 4: البحث في جميع حقول الإدخال
+                    if not captcha_input:
+                        inputs = self.driver.find_elements(By.TAG_NAME, "input")
+                        for inp in inputs:
+                            input_type = inp.get_attribute("type")
+                            input_id = inp.get_attribute("id")
+                            input_name = inp.get_attribute("name")
+                            if input_type == "text" and (
+                                (input_id and "captcha" in input_id.lower()) or 
+                                (input_name and "captcha" in input_name.lower())
+                            ):
+                                captcha_input = inp
+                                break
+                    
+                    if captcha_input:
+                        captcha_input.clear()
+                        time.sleep(0.5)
+                        captcha_input.send_keys(str(captcha_result))
+                        logger.info(f"✅ تم إدخال نتيجة الكابتشا: {captcha_result}")
+                    else:
+                        logger.warning("⚠️ لم يتم العثور على حقل إدخال الكابتشا")
+                        
                 except Exception as e:
-                    logger.warning(f"⚠️ لم يتم العثور على حقل الكابتشا: {e}")
+                    logger.warning(f"⚠️ خطأ في إدخال الكابتشا: {e}")
+            else:
+                logger.warning("⚠️ لم يتم حل الكابتشا")
             
             # النقر على زر تسجيل الدخول
             try:
@@ -144,7 +248,9 @@ class M3UBot:
             
             login_button.click()
             logger.info("⏳ تم النقر على زر تسجيل الدخول...")
-            time.sleep(5)
+            
+            # انتظار أطول قليلاً لإتمام عملية تسجيل الدخول
+            time.sleep(8)
             
             # التحقق من نجاح تسجيل الدخول
             current_url = self.driver.current_url
