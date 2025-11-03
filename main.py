@@ -249,7 +249,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     TOKEN = "ضع_رمز_البوت_هنا"  # ← استبدل هذا بالتوكن الحقيقي من BotFather
     
-    if TOKEN == "ضع_رمز_البوت_هنا":
+    if TOKEN == "7867838350:AAEtPQjxEtfxIlguE56Fc2lZuJVK04kKf6U":
         logger.error("⚠️ لم يتم وضع توكن البوت بعد.")
         return
     
