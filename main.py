@@ -275,7 +275,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     """تشغيل البوت"""
     # ضع هنا رمز البوت الخاص بك من @BotFather
-    TOKEN = "YOUR_BOT_TOKEN_HERE"
+    TOKEN = 7867838350:AAEtPQjxEtfxIlguE56Fc2lZuJVK04kKf6U
     
     # إنشاء التطبيق
     application = Application.builder().token(TOKEN).build()
