@@ -1,5 +1,6 @@
 import logging
 import re
+import os
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
 from selenium import webdriver
@@ -35,140 +36,228 @@ class M3UBot:
         self.driver = None
     
     def init_driver(self):
-        """تهيئة متصفح Chrome"""
+        """تهيئة متصفح Chrome محسّن لـ Replit"""
         try:
             chrome_options = Options()
+            # إعدادات مهمة لـ Replit
             chrome_options.add_argument('--headless')
             chrome_options.add_argument('--no-sandbox')
             chrome_options.add_argument('--disable-dev-shm-usage')
-            chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-            chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-            chrome_options.add_experimental_option('useAutomationExtension', False)
-            chrome_options.add_argument('--window-size=1920,1080')
             chrome_options.add_argument('--disable-gpu')
+            chrome_options.add_argument('--disable-software-rasterizer')
+            chrome_options.add_argument('--disable-extensions')
+            chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+            chrome_options.add_argument('--window-size=1920,1080')
             chrome_options.add_argument('--lang=ar')
+            chrome_options.add_argument('--disable-logging')
+            chrome_options.add_argument('--log-level=3')
+            chrome_options.add_argument('--silent')
             
+            # تحسينات إضافية للذاكرة
+            chrome_options.add_argument('--disable-background-networking')
+            chrome_options.add_argument('--disable-background-timer-throttling')
+            chrome_options.add_argument('--disable-backgrounding-occluded-windows')
+            chrome_options.add_argument('--disable-breakpad')
+            chrome_options.add_argument('--disable-component-extensions-with-background-pages')
+            chrome_options.add_argument('--disable-features=TranslateUI,BlinkGenPropertyTrees')
+            chrome_options.add_argument('--disable-ipc-flooding-protection')
+            chrome_options.add_argument('--disable-renderer-backgrounding')
+            chrome_options.add_argument('--enable-features=NetworkService,NetworkServiceInProcess')
+            chrome_options.add_argument('--force-color-profile=srgb')
+            chrome_options.add_argument('--hide-scrollbars')
+            chrome_options.add_argument('--metrics-recording-only')
+            chrome_options.add_argument('--mute-audio')
+            
+            chrome_options.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
+            chrome_options.add_experimental_option('useAutomationExtension', False)
+            
+            # محاولة استخدام Chrome المثبت في Replit
             service = Service(ChromeDriverManager().install())
             self.driver = webdriver.Chrome(service=service, options=chrome_options)
-            self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
             
-            logger.info("تم تهيئة المتصفح بنجاح")
+            # إخفاء أن المتصفح آلي
+            self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+            self.driver.execute_cdp_cmd('Network.setUserAgentOverride', {
+                "userAgent": 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            })
+            
+            logger.info("✅ تم تهيئة المتصفح بنجاح")
             return self.driver
         except Exception as e:
-            logger.error(f"خطأ في تهيئة المتصفح: {e}")
+            logger.error(f"❌ خطأ في تهيئة المتصفح: {e}")
             return None
     
     def solve_captcha(self):
-        """حل الكابتشا (تم تعطيله مؤقتاً)"""
-        logger.info("تخطي الكابتشا في وضع Replit")
-        return 5  # رقم افتراضي
+        """محاولة حل الكابتشا البسيطة"""
+        try:
+            # انتظار ظهور صورة الكابتشا
+            time.sleep(2)
+            
+            # محاولة إيجاد صورة الكابتشا
+            captcha_img = self.driver.find_element(By.ID, "CaptchaImage")
+            if captcha_img:
+                logger.info("⚠️ تم اكتشاف كابتشا - يجب حلها يدوياً أو استخدام قيمة افتراضية")
+                # يمكن هنا إضافة خدمة حل كابتشا مثل 2captcha
+                return None
+        except:
+            logger.info("ℹ️ لا يوجد كابتشا")
+            return None
     
     def login(self):
         """تسجيل الدخول إلى الموقع"""
         try:
-            logger.info("بدء عملية تسجيل الدخول...")
+            logger.info("🔑 بدء عملية تسجيل الدخول...")
             self.driver.get(LOGIN_URL)
             time.sleep(3)
             
-            username_field = WebDriverWait(self.driver, 10).until(
+            # إدخال اسم المستخدم
+            username_field = WebDriverWait(self.driver, 15).until(
                 EC.presence_of_element_located((By.ID, "Username"))
             )
-            password_field = self.driver.find_element(By.ID, "Password")
-            
             username_field.clear()
+            time.sleep(0.5)
             username_field.send_keys(SITE_USERNAME)
+            
+            # إدخال كلمة المرور
+            password_field = self.driver.find_element(By.ID, "Password")
             password_field.clear()
+            time.sleep(0.5)
             password_field.send_keys(SITE_PASSWORD)
             
+            # محاولة حل الكابتشا
             captcha_result = self.solve_captcha()
             if captcha_result:
                 try:
                     captcha_input = self.driver.find_element(By.ID, "Captcha")
                     captcha_input.clear()
                     captcha_input.send_keys(str(captcha_result))
-                except:
-                    pass
+                except Exception as e:
+                    logger.warning(f"⚠️ لم يتم العثور على حقل الكابتشا: {e}")
             
+            # النقر على زر تسجيل الدخول
             try:
-                login_button = self.driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
+                login_button = WebDriverWait(self.driver, 10).until(
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, "button[type='submit']"))
+                )
             except:
                 login_button = self.driver.find_element(By.XPATH, "//button[contains(text(), 'Login') or contains(text(), 'تسجيل')]")
             
             login_button.click()
-            logger.info("تم النقر على زر تسجيل الدخول")
+            logger.info("⏳ تم النقر على زر تسجيل الدخول...")
             time.sleep(5)
             
+            # التحقق من نجاح تسجيل الدخول
             current_url = self.driver.current_url
             if "dashboard" in current_url.lower() or "users" in current_url.lower() or current_url != LOGIN_URL:
                 logger.info("✅ تم تسجيل الدخول بنجاح")
                 return True
             else:
-                logger.error("❌ فشل تسجيل الدخول")
+                logger.error(f"❌ فشل تسجيل الدخول - URL الحالي: {current_url}")
+                # حفظ لقطة شاشة للتشخيص
+                try:
+                    self.driver.save_screenshot('/tmp/login_failed.png')
+                    logger.info("📸 تم حفظ لقطة شاشة في /tmp/login_failed.png")
+                except:
+                    pass
                 return False
                 
         except Exception as e:
-            logger.error(f"خطأ في تسجيل الدخول: {e}")
+            logger.error(f"❌ خطأ في تسجيل الدخول: {e}")
+            try:
+                self.driver.save_screenshot('/tmp/login_error.png')
+            except:
+                pass
             return False
     
     def create_trial(self, username):
         """إنشاء حساب تجريبي"""
         try:
-            logger.info(f"بدء إنشاء حساب تجريبي للمستخدم: {username}")
+            logger.info(f"📝 بدء إنشاء حساب تجريبي للمستخدم: {username}")
             self.driver.get(ADD_M3U_URL)
             time.sleep(3)
             
-            username_field = WebDriverWait(self.driver, 10).until(
+            # إدخال اسم المستخدم
+            username_field = WebDriverWait(self.driver, 15).until(
                 EC.presence_of_element_located((By.ID, "Username"))
             )
             username_field.clear()
+            time.sleep(0.5)
             username_field.send_keys(username)
+            logger.info(f"✅ تم إدخال اسم المستخدم: {username}")
             
+            # اختيار الباقة Trial
             try:
-                package_select = Select(self.driver.find_element(By.ID, "PackageId"))
+                package_select = Select(WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((By.ID, "PackageId"))
+                ))
                 for option in package_select.options:
-                    if "trial" in option.text.lower():
+                    if "trial" in option.text.lower() or "1day" in option.text.lower():
                         package_select.select_by_value(option.get_attribute("value"))
+                        logger.info(f"✅ تم اختيار الباقة: {option.text}")
                         break
             except Exception as e:
-                logger.warning(f"تعذر اختيار الباقة: {e}")
+                logger.warning(f"⚠️ تعذر اختيار الباقة: {e}")
             
             time.sleep(2)
             
+            # اختيار الباقات (Bouquets)
+            logger.info("📦 بدء اختيار الباقات...")
             for bouquet_id in SELECTED_BOUQUETS:
                 try:
                     script = f"""
                     var allBouquets = document.getElementById('AllBouquets');
-                    var option = allBouquets.querySelector('option[value="{bouquet_id}"]');
-                    if (option) {{
-                        option.selected = true;
-                        right();
+                    if (allBouquets) {{
+                        var option = allBouquets.querySelector('option[value="{bouquet_id}"]');
+                        if (option) {{
+                            option.selected = true;
+                            if (typeof right === 'function') {{
+                                right();
+                            }}
+                        }}
                     }}
                     """
                     self.driver.execute_script(script)
                     time.sleep(0.5)
-                except:
-                    pass
+                    logger.info(f"✅ تم إضافة الباقة: {bouquet_id}")
+                except Exception as e:
+                    logger.warning(f"⚠️ فشل إضافة الباقة {bouquet_id}: {e}")
             
+            # تحديد جميع الباقات المختارة
+            time.sleep(1)
             self.driver.execute_script("""
                 var selectedBouquets = document.getElementById('SelectedBouquets');
-                for (var i = 0; i < selectedBouquets.options.length; i++) {
-                    selectedBouquets.options[i].selected = true;
+                if (selectedBouquets) {
+                    for (var i = 0; i < selectedBouquets.options.length; i++) {
+                        selectedBouquets.options[i].selected = true;
+                    }
                 }
             """)
             
+            # النقر على زر Add/Submit
             try:
-                add_button = self.driver.find_element(By.ID, "btnSend")
+                add_button = WebDriverWait(self.driver, 10).until(
+                    EC.element_to_be_clickable((By.ID, "btnSend"))
+                )
                 add_button.click()
-            except:
-                logger.error("لم يتم العثور على زر Add")
+                logger.info("✅ تم النقر على زر الإضافة")
+            except Exception as e:
+                logger.error(f"❌ لم يتم العثور على زر Add: {e}")
+                try:
+                    add_button = self.driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
+                    add_button.click()
+                except:
+                    pass
             
             time.sleep(5)
+            
+            # البحث عن رابط M3U في الصفحة
             page_source = self.driver.page_source
             m3u_pattern = r'http[s]?://[^\s<>"]+\.m3u[8]?'
             m3u_matches = re.findall(m3u_pattern, page_source)
-            m3u_url = m3u_matches[0] if m3u_matches else None
             
-            if m3u_url:
+            if m3u_matches:
+                m3u_url = m3u_matches[0]
+                logger.info(f"✅ تم العثور على رابط M3U: {m3u_url}")
                 return {
                     "username": username,
                     "package": "1day/trial",
@@ -176,96 +265,190 @@ class M3UBot:
                     "m3u_url": m3u_url
                 }
             else:
+                logger.error("❌ لم يتم العثور على رابط M3U")
+                # حفظ الصفحة للتشخيص
+                try:
+                    with open('/tmp/page_source.html', 'w', encoding='utf-8') as f:
+                        f.write(page_source)
+                    logger.info("📄 تم حفظ محتوى الصفحة في /tmp/page_source.html")
+                except:
+                    pass
                 return None
+                
         except Exception as e:
-            logger.error(f"خطأ في إنشاء الحساب: {e}")
+            logger.error(f"❌ خطأ في إنشاء الحساب: {e}")
+            try:
+                self.driver.save_screenshot('/tmp/create_error.png')
+            except:
+                pass
             return None
     
     def close_driver(self):
-        """إغلاق المتصفح"""
+        """إغلاق المتصفح وتنظيف الموارد"""
         try:
             if self.driver:
                 self.driver.quit()
-                logger.info("تم إغلاق المتصفح")
+                logger.info("✅ تم إغلاق المتصفح بنجاح")
         except Exception as e:
-            logger.error(f"خطأ في إغلاق المتصفح: {e}")
+            logger.error(f"⚠️ خطأ في إغلاق المتصفح: {e}")
 
-# إنشاء instance من البوت
-bot_instance = M3UBot()
+# متغير عام للبوت
+bot_instance = None
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """أمر البدء"""
     welcome_message = """
 🎬 مرحباً بك في بوت إنشاء Trial M3U
 
-للحصول على حساب تجريبي لمدة 24 ساعة، أرسل اسم المستخدم الذي تريده.
+🔹 للحصول على حساب تجريبي لمدة 24 ساعة
+🔹 أرسل اسم المستخدم الذي تريده (أحرف وأرقام فقط)
+
+📌 مثال: user123
 """
     await update.message.reply_text(welcome_message)
     return WAITING_USERNAME
 
 async def create_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """إنشاء الحساب التجريبي"""
+    global bot_instance
     username = update.message.text.strip()
-    if not re.match(r'^[a-zA-Z0-9_-]+$', username):
-        await update.message.reply_text("❌ اسم المستخدم يجب أن يحتوي على أحرف وأرقام فقط.")
+    
+    # التحقق من صحة اسم المستخدم
+    if not re.match(r'^[a-zA-Z0-9_-]{3,20}$', username):
+        await update.message.reply_text(
+            "❌ اسم المستخدم غير صالح!\n\n"
+            "يجب أن يحتوي على:\n"
+            "• أحرف وأرقام فقط (a-z, A-Z, 0-9)\n"
+            "• من 3 إلى 20 حرف\n"
+            "• يمكن استخدام _ و -"
+        )
         return WAITING_USERNAME
     
-    await update.message.reply_text("⏳ جارٍ إنشاء الحساب التجريبي...")
+    await update.message.reply_text("⏳ جارٍ إنشاء الحساب التجريبي...\nقد يستغرق هذا بضع ثوانٍ...")
 
-    if not bot_instance.init_driver():
-        await update.message.reply_text("❌ فشل في تهيئة المتصفح.")
-        return ConversationHandler.END
+    try:
+        # إنشاء instance جديد من البوت
+        bot_instance = M3UBot()
+        
+        # تهيئة المتصفح
+        if not bot_instance.init_driver():
+            await update.message.reply_text("❌ فشل في تهيئة المتصفح.\nالرجاء المحاولة مرة أخرى لاحقاً.")
+            return ConversationHandler.END
 
-    if not bot_instance.login():
-        await update.message.reply_text("❌ فشل تسجيل الدخول إلى الموقع.")
-        bot_instance.close_driver()
-        return ConversationHandler.END
+        # تسجيل الدخول
+        if not bot_instance.login():
+            await update.message.reply_text(
+                "❌ فشل تسجيل الدخول إلى الموقع.\n"
+                "قد يكون هناك مشكلة في الكابتشا أو بيانات الدخول."
+            )
+            bot_instance.close_driver()
+            return ConversationHandler.END
 
-    account_info = bot_instance.create_trial(username)
+        # إنشاء الحساب
+        account_info = bot_instance.create_trial(username)
 
-    if account_info:
-        response = f"""
+        if account_info:
+            response = f"""
 ✅ تم إنشاء الحساب بنجاح!
 
+━━━━━━━━━━━━━━━━━━
 👤 اسم المستخدم: {account_info['username']}
 📦 الباقة: {account_info['package']}
 ⏱ المدة: {account_info['duration']}
+━━━━━━━━━━━━━━━━━━
 
 🔗 رابط M3U:
 {account_info['m3u_url']}
-"""
-        await update.message.reply_text(response)
-    else:
-        await update.message.reply_text("❌ فشل إنشاء الحساب.")
 
-    bot_instance.close_driver()
+━━━━━━━━━━━━━━━━━━
+💡 استخدم الرابط في تطبيق IPTV المفضل لديك
+"""
+            await update.message.reply_text(response)
+        else:
+            await update.message.reply_text(
+                "❌ فشل إنشاء الحساب.\n"
+                "قد يكون اسم المستخدم مستخدماً بالفعل أو حدث خطأ في النظام."
+            )
+
+    except Exception as e:
+        logger.error(f"❌ خطأ عام: {e}")
+        await update.message.reply_text("❌ حدث خطأ غير متوقع. الرجاء المحاولة مرة أخرى.")
+    
+    finally:
+        # إغلاق المتصفح في جميع الحالات
+        if bot_instance:
+            bot_instance.close_driver()
+    
     return ConversationHandler.END
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("تم إلغاء العملية.")
+    """إلغاء العملية"""
+    await update.message.reply_text("❌ تم إلغاء العملية.")
     return ConversationHandler.END
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("/start - بدء\n/help - تعليمات")
+    """عرض التعليمات"""
+    help_text = """
+📖 تعليمات الاستخدام:
+
+/start - بدء البوت والحصول على حساب تجريبي
+/help - عرض هذه التعليمات
+/cancel - إلغاء العملية الحالية
+
+━━━━━━━━━━━━━━━━━━
+ℹ️ معلومات مهمة:
+• الحساب التجريبي صالح لمدة 24 ساعة
+• اسم المستخدم يجب أن يكون فريداً
+• استخدم أحرف وأرقام فقط في اسم المستخدم
+"""
+    await update.message.reply_text(help_text)
 
 def main():
-    TOKEN = "ضع_رمز_البوت_هنا"  # ← استبدل هذا بالتوكن الحقيقي من BotFather
+    """الدالة الرئيسية"""
+    # استخدام التوكن المقدم
+    TOKEN = "7867838350:AAEtPQjxEtfxIlguE56Fc2lZuJVK04kKf6U"
     
-    if TOKEN == "7867838350:AAEtPQjxEtfxIlguE56Fc2lZuJVK04kKf6U":
-        logger.error("⚠️ لم يتم وضع توكن البوت بعد.")
+    # يمكن أيضاً استخدام متغيرات البيئة (أفضل للأمان)
+    # TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', TOKEN)
+    
+    if not TOKEN or TOKEN == "ضع_رمز_البوت_هنا":
+        logger.error("⚠️ خطأ: لم يتم تعيين توكن البوت!")
+        print("⚠️ الرجاء تعيين توكن البوت في المتغير TOKEN")
         return
     
-    application = Application.builder().token(TOKEN).build()
-    
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler('start', start)],
-        states={WAITING_USERNAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, create_account)]},
-        fallbacks=[CommandHandler('cancel', cancel)],
-    )
-    
-    application.add_handler(conv_handler)
-    application.add_handler(CommandHandler('help', help_command))
-    
-    logger.info("🤖 البوت يعمل الآن...")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    try:
+        # إنشاء التطبيق
+        application = Application.builder().token(TOKEN).build()
+        
+        # إعداد معالج المحادثة
+        conv_handler = ConversationHandler(
+            entry_points=[CommandHandler('start', start)],
+            states={
+                WAITING_USERNAME: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, create_account)
+                ]
+            },
+            fallbacks=[CommandHandler('cancel', cancel)],
+        )
+        
+        # إضافة المعالجات
+        application.add_handler(conv_handler)
+        application.add_handler(CommandHandler('help', help_command))
+        
+        # بدء البوت
+        logger.info("=" * 50)
+        logger.info("🤖 البوت يعمل الآن...")
+        logger.info("✅ جاهز لاستقبال الطلبات")
+        logger.info("=" * 50)
+        
+        application.run_polling(
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True
+        )
+        
+    except Exception as e:
+        logger.error(f"❌ خطأ في تشغيل البوت: {e}")
+        print(f"❌ خطأ: {e}")
 
 if __name__ == '__main__':
     main()
